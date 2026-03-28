@@ -1,0 +1,9 @@
+pytest==8.3.3
+pytest-asyncio==0.24.0
+pytest-mock==3.14.0
+httpx==0.27.2
+aiosqlite==0.20.0
+sqlalchemy[asyncio]==2.0.36
+fastapi==0.115.0
+feedparser==6.0.11
+fakeredis[aioredis]==2.26.1

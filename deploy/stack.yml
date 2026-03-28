@@ -1,0 +1,88 @@
+version: "3.9"
+
+networks:
+  ispider_public:
+    driver: overlay
+    attachable: true
+  ispider_internal:
+    driver: overlay
+
+secrets:
+  anthropic_api_key:
+    external: true
+  postgres_password:
+    external: true
+  vapid_private_key:
+    external: true
+
+volumes:
+  ispider_pgdata:
+    driver: local
+
+services:
+
+  frontend:
+    image: ispider-frontend:latest
+    networks: [ispider_public]
+    deploy:
+      replicas: 1
+      restart_policy: { condition: on-failure }
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.ispider-fe.rule=Host(`ispider.${DOMAIN}`)"
+        - "traefik.http.routers.ispider-fe.entrypoints=websecure"
+        - "traefik.http.routers.ispider-fe.tls.certresolver=letsencrypt"
+        - "traefik.http.services.ispider-fe.loadbalancer.server.port=80"
+
+  api:
+    image: ispider-api:latest
+    networks: [ispider_public, ispider_internal]
+    secrets: [anthropic_api_key, postgres_password, vapid_private_key]
+    environment:
+      ISPIDER_POSTGRES_HOST: db
+      ISPIDER_POSTGRES_DB: ispider
+      ISPIDER_POSTGRES_USER: ispider
+    deploy:
+      replicas: 1
+      restart_policy: { condition: on-failure }
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.ispider-api.rule=Host(`ispider.${DOMAIN}`) && PathPrefix(`/api`)"
+        - "traefik.http.routers.ispider-api.entrypoints=websecure"
+        - "traefik.http.routers.ispider-api.tls.certresolver=letsencrypt"
+        - "traefik.http.services.ispider-api.loadbalancer.server.port=8000"
+
+  worker:
+    image: ispider-worker:latest
+    networks: [ispider_internal]
+    secrets: [anthropic_api_key, postgres_password, vapid_private_key]
+    environment:
+      ISPIDER_POSTGRES_HOST: db
+      ISPIDER_POSTGRES_DB: ispider
+      ISPIDER_POSTGRES_USER: ispider
+    deploy:
+      replicas: 1
+      restart_policy: { condition: on-failure }
+
+  db:
+    image: postgres:16
+    networks: [ispider_internal]
+    secrets: [postgres_password]
+    environment:
+      POSTGRES_DB: ispider
+      POSTGRES_USER: ispider
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - ispider_pgdata:/var/lib/postgresql/data
+    deploy:
+      replicas: 1
+      restart_policy: { condition: on-failure }
+      placement:
+        constraints: [node.role == manager]
+
+  redis:
+    image: redis:7-alpine
+    networks: [ispider_internal]
+    deploy:
+      replicas: 1
+      restart_policy: { condition: on-failure }
